@@ -5,30 +5,34 @@ if (typeof define !== 'function') {
 define(function() {
     "use strict";
 
-    var forEach = Function.prototype.call.bind(Array.prototype.forEach);
+    var map = Function.prototype.call.bind(Array.prototype.map);
+    var slice = Function.prototype.call.bind(Array.prototype.slice);
+    
+    function present(arg) {
+        return arg !== null && arg !== undefined;
+    }
+    
+    var schedule = (function() {
+        var helper;
+    
+        if (typeof setImmediate === "function") {
+            return setImmediate;
+        }
+        
+        
+        if (typeof Promise === "function") {
+            helper = new Promise(function(resolve) {
+                resolve();
+            });
+            return function(func) {
+                helper.then(func);
+            };
+        }
+    
+        return setTimeout;
+    })();
     
     var firing = false;
-    
-    function getSetImmediateScheduler() {
-        if (typeof setImmediate !== "function") {
-            return null;
-        }
-        return setImmediate;
-    }
-    
-    function getPromiseScheduler() {
-        if (typeof Promise !== "function") {
-            return null;
-        }
-        var p = new Promise(function(done) {
-            done(null);
-        });
-        return function(func) {
-            p.then(func);
-        };
-    }
-    
-    var schedule = getSetImmediateScheduler() || getPromiseScheduler() || setTimeout;
     
     var head = {
         _next: null
@@ -47,10 +51,10 @@ define(function() {
     }
     
     function fire() {
+        var block;
+    
         firing = true;
         try {
-            var block;
-        
             while ((block = head._next) !== null) {
                 head._next = null;
                 head._last = head;
@@ -99,25 +103,42 @@ define(function() {
         }
     };
     
-    proto._error = function(err) {
+    proto._error = function(reason) {
         if (this._state === RUNNING) {
             this._state = ERROR;
-            this._value = err;
+            this._value = reason;
             if (this._onsuccess) {
                 enqueue(this);
             }
         }
     };
     
-    proto._tie = function(success, error) {
+    proto._tieable = function() {
         if (this._state === DONE) {
             throw new Error("Already aborted");
         }
+        if (this._onsuccess) {
+            throw new Error("Already tied");
+        }
+        return this;
+    };
+    
+    proto._tie = function(success, error) {
         this._onsuccess = success;
         this._onerror = error;
-        if (this._state !== RUNNING) {
+        if (this._state === SUCCESS || this._state === ERROR) {
             enqueue(this);
         }
+        return this;
+    };
+    
+    proto._guardTie = function(owner, success, error) {
+        if (owner._state === DONE) {
+            this._abort();
+        } else {
+            this._tie(success, error);
+        }
+        return this;
     };
     
     proto._abort = function() {
@@ -145,9 +166,20 @@ define(function() {
     function runCont(func, args) {
         try {
             return wrap(func.apply(null, args));
-        } catch (err) {
-            return error(err);
+        } catch (reason) {
+            return error(reason);
         }
+    }
+    
+    function cont(func) {
+        var ret;
+        
+        try {
+            ret = func.apply(null, slice(arguments, 1));
+        } catch (reason) {
+            return error(reason);
+        }
+        return wrap(ret);
     }
     
     function wrap(value) {
@@ -163,7 +195,7 @@ define(function() {
                 return success(value);
             }
             if (value instanceof Block) {
-                return value;
+                return value._tieable();
             }
             if (value instanceof Error) {
                 return error(value);
@@ -178,14 +210,16 @@ define(function() {
     }
     
     function impl(func) {
-        var implBlock = new Block();
+        var implBlock, ret;
+    
+        implBlock = new Block();
         try {
-            var ret = func(implBlock._success.bind(implBlock), implBlock._error.bind(implBlock));
+            ret = func(implBlock._success.bind(implBlock), implBlock._error.bind(implBlock));
             if (ret && "abort" in ret) {
                 implBlock._onabort = ret.abort.bind(ret);
             }
-        } catch (err) {
-            implBlock._error(err);
+        } catch (reason) {
+            implBlock._error(reason);
         }
         return implBlock;
     }
@@ -196,13 +230,21 @@ define(function() {
         return successBlock;
     }
     
-    function error(err) {
+    function error(reason) {
         var errorBlock = createBlock();
-        errorBlock._error(err);
+        errorBlock._error(reason);
         return errorBlock;
     }
     
     function all(blocks) {
+        var remaining, results, allBlock;
+    
+        function abort() {
+            blocks.forEach(function(block) {
+                block._abort();
+            });
+        }
+        
         if (arguments.length !== 1) {
             blocks = arguments;
         }
@@ -211,26 +253,21 @@ define(function() {
             return success([]);
         }
         
-        var remaining = blocks.length;
-        var results = new Array(remaining);
-        var allBlock = createBlock(abort);
+        blocks = map(blocks, wrap);
+        remaining = blocks.length;
+        results = new Array(remaining);
+        allBlock = createBlock(abort);
         
-        function abort() {
-            forEach(blocks, function(block) {
-                block._abort();
-            });
-        }
-        
-        forEach(blocks, function(block, i) {
+        blocks.forEach(function(block, i) {
             block._tie(function(result) {
                 results[i] = result;
                 --remaining;
                 if (!remaining) {
                     allBlock._success(results);
                 }
-            }, function(err) {
+            }, function(reason) {
                 abort();
-                allBlock._error(err);
+                allBlock._error(reason);
             });
         });
         
@@ -238,6 +275,14 @@ define(function() {
     }
     
     function any(blocks) {
+        var anyBlock;
+    
+        function abort() {
+            blocks.forEach(function(block) {
+                block._abort();
+            });
+        }
+        
         if (arguments.length !== 1) {
             blocks = arguments;
         }
@@ -246,21 +291,16 @@ define(function() {
             return success();
         }
         
-        var anyBlock = createBlock(abort);
+        blocks = map(blocks, wrap);
+        anyBlock = createBlock(abort);
         
-        function abort() {
-            forEach(blocks, function(block) {
-                block._abort();
-            });
-        }
-        
-        forEach(blocks, function(block) {
+        blocks.forEach(function(block) {
             block._tie(function(result) {
                 abort();
                 anyBlock._success(result);
-            }, function(err) {
+            }, function(reason) {
                 abort();
-                anyBlock._error(err);
+                anyBlock._error(reason);
             });
         });
         
@@ -268,66 +308,35 @@ define(function() {
     }
     
     function wait(delay) {
-        var timer, waitBlock = createBlock(function() {
-            clearTimeout(timer);
+        return impl(function(success) {
+            return {
+                abort: clearTimeout.bind(setTimeout(success, delay))
+            };
         });
-        
-        timer = setTimeout(waitBlock._success.bind(waitBlock), delay);
-        
-        return waitBlock;
     }
     
     function timeout(delay) {
-        return wait(delay).pipe(function() {
-            throw new Error("Timed out");
-        });
+        return wait(delay).fail(new Error("Timed out"));
     }
     
     function retry(func, limit) {
-        if (limit === undefined) {
-            limit = Infinity;
+        if (present(limit)) {
+            return (function go() {
+                if (limit-- > 0) {
+                    return cont(func).pipe(null, go);
+                } else {
+                    return error(new Error("Retry limit reached"));
+                }
+            })();
+        } else {
+            return (function go() {
+                return cont(func).pipe(null, go);
+            });
         }
-        
-        var retryBlock = createBlock(function() {
-            block._abort();
-        });
-        
-        var block;
-        
-        function step() {
-            if (limit > 0) {
-                block = runCont(func);
-                block._tie(function(result) {
-                    retryBlock._success(result);
-                }, function() {
-                    step();
-                });
-            } else {
-                retryBlock._error(new Error("Retry limit reached"));
-            }
-        }
-        
-        step();
-        
-        return retryBlock;
     }
     
     function periodic(func, delay) {
-        var block, timer = setInterval(function() {
-            if (block) {
-                return;
-            }
-        
-            block = runCont(func);
-            block._tie(function() {
-                block = null;
-            }, function(err) {
-                abort();
-                periodicBlock._error(err);
-            });
-        }, delay);
-        
-        var periodicBlock = createBlock(abort);
+        var block, periodicBlock, timer;
         
         function abort() {
             clearInterval(timer);
@@ -336,27 +345,43 @@ define(function() {
             }
         }
         
+        timer = setInterval(function() {
+            if (block) {
+                return;
+            }
+        
+            block = runCont(func)._guardTie(periodicBlock, function() {
+                block = null;
+            }, function(reason) {
+                abort();
+                periodicBlock._error(reason);
+            });
+        }, delay);
+        periodicBlock = createBlock(abort);
+        
         return periodicBlock;
     }
     
-    proto.pipe = function(onsuccess, onerror) {
-        var thisBlock = this, contBlock = null, pipeBlock = createBlock(function() {
-            if (contBlock) {
-                contBlock._abort();
-            } else {
-                thisBlock._abort();
-            }
-        });
-        
-        var pipeSuccess = pipeBlock._success.bind(pipeBlock);
-        var pipeError = pipeBlock._error.bind(pipeBlock);
+    proto.pipe = function(onsuccess, onerror, onabort) {
+        var thisBlock = this._tieable(), contBlock, pipeBlock, pipeSuccess, pipeError;
         
         function setupCont(func, arg) {
-            contBlock = runCont(func, [arg]);
-            contBlock._tie(pipeSuccess, pipeError);
+            thisBlock = null;
+            contBlock = runCont(func, [arg])._guardTie(pipeBlock, pipeSuccess, pipeError);
         }
         
-        this._tie(
+        pipeBlock = createBlock(function() {
+            if (thisBlock) {
+                thisBlock._abort();
+                runCont(onabort)._abort();
+            } else if (contBlock) {
+                contBlock._abort();
+            }
+        });
+        pipeSuccess = pipeBlock._success.bind(pipeBlock);
+        pipeError = pipeBlock._error.bind(pipeBlock);
+        
+        thisBlock._tie(
             onsuccess ? setupCont.bind(null, onsuccess) : pipeSuccess,
             onerror ? setupCont.bind(null, onerror) : pipeError
         );
@@ -364,9 +389,44 @@ define(function() {
         return pipeBlock;
     };
     
+    proto.exit = function(func) {
+        return this.pipe(function(result) {
+            return cont(func, true).put(result);
+        }, function(reason) {
+            cont(func, false).abort();
+            return error(reason);
+        }, function() {
+            cont(func, false).abort();
+        });
+    };
+    
+    proto.map = function(func) {
+        return this.pipe(function(result) {
+            return all(map(result, func));
+        });
+    };
+    
     proto.put = function(result) {
         return this.pipe(function() {
             return success(result);
+        });
+    };
+    
+    proto.modify = function(func) {
+        return this.pipe(function(result) {
+            return success(func(result));
+        });
+    };
+    
+    proto.unpack = function(func) {
+        this.pipe(function(result) {
+            return func.apply(null, result);
+        });
+    };
+    
+    proto.fail = function(reason) {
+        return this.pipe(function() {
+            throw reason;
         });
     };
     
@@ -380,10 +440,10 @@ define(function() {
         });
     };
 
-
     return {
         all: all,
         any: any,
+        cont: cont,
         error: error,
         impl: impl,
         periodic: periodic,
