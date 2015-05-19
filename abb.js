@@ -146,10 +146,10 @@ define(function() {
     
     proto._tieable = function() {
         if (this._state === DONE) {
-            throw new Error("Already aborted");
+            throw new Error("Block is already aborted");
         }
         if (this._onsuccess) {
-            throw new Error("Already tied");
+            throw new Error("Block already has a succesor");
         }
         return this;
     };
@@ -178,11 +178,7 @@ define(function() {
         running = this._state === RUNNING;
         this._state = DONE;
         if (running) {
-            try {
-                this._onabort();
-            } catch (err) {
-                trapError(err);
-            }
+            this._onabort();
         }
     };
     
@@ -190,7 +186,7 @@ define(function() {
         var prev;
         
         if (this._onsuccess) {
-            throw new Error("Successor has been set, can no longer abort");
+            throw new Error("Cannot abort after setting a successor");
         }
         
         prev = setErrorTrap();
@@ -198,16 +194,16 @@ define(function() {
         restoreErrorTrap(prev);
     };
     
-    function _cont() {
+    function _run() {
         try {
-            return cont.apply(null, arguments);
+            return run.apply(null, arguments);
         } catch (err) {
             trapError(err);
-            return error(reason);
+            return error(err);
         }
     }
     
-    function cont(func) {
+    function run(func) {
         return wrap(func.apply(null, slice(arguments, 1)));
     }
     
@@ -230,7 +226,7 @@ define(function() {
                 return error(value);
             }
             if (typeof value.then === "function") {
-                return impl(promise.then.bind(promise));
+                return impl(value.then.bind(value));
             }
             break;
         }
@@ -244,7 +240,13 @@ define(function() {
         implBlock = new Block();
         ret = func(implBlock._success.bind(implBlock), implBlock._error.bind(implBlock));
         if (ret && typeof ret.abort === "function") {
-            implBlock._onabort = ret.abort.bind(ret);
+            implBlock._onabort = function() {
+                try {
+                    ret.abort();
+                } catch (err) {
+                    trapError(err);
+                }
+            };
         }
         
         return implBlock;
@@ -349,43 +351,33 @@ define(function() {
         if (present(limit)) {
             return (function go() {
                 if (limit-- > 0) {
-                    return cont(func).pipe(null, go);
+                    return run(func).pipe(null, go);
                 } else {
                     return error(new Error("Retry limit reached"));
                 }
             })();
         } else {
             return (function go() {
-                return cont(func).pipe(null, go);
-            });
+                return run(func).pipe(null, go);
+            })();
         }
     }
     
     function periodic(func, delay) {
-        var block, periodicBlock, timer;
-        
-        function abort() {
-            clearInterval(timer);
-            if (block) {
-                block._abort();
-            }
-        }
+        var barrier, timer;
         
         timer = setInterval(function() {
-            if (block) {
-                return;
+            if (barrier) {
+                barrier();
+                barrier = null;
             }
-        
-            block = _cont(func)._guardTie(periodicBlock, function() {
-                block = null;
-            }, function(reason) {
-                abort();
-                periodicBlock._error(reason);
-            });
         }, delay);
-        periodicBlock = new Block(abort);
         
-        return periodicBlock;
+        return (function go() {
+            return impl(function(onsuccess) {
+                barrier = onsuccess;
+            }).pipe(func).pipe(go);
+        })().exit(clearInterval.bind(null, timer));
     }
     
     proto.pipe = function(onsuccess, onerror, onabort) {
@@ -393,13 +385,13 @@ define(function() {
         
         function setupCont(func, arg) {
             thisBlock = null;
-            contBlock = _cont(func, arg)._guardTie(pipeBlock, pipeSuccess, pipeError);
+            contBlock = _run(func, arg)._guardTie(pipeBlock, pipeSuccess, pipeError);
         }
         
         pipeBlock = new Block(function() {
             if (thisBlock) {
                 thisBlock._abort();
-                _cont(onabort || nop)._abort();
+                _run(onabort || nop)._abort();
             } else if (contBlock) {
                 contBlock._abort();
             }
@@ -417,12 +409,12 @@ define(function() {
     
     proto.exit = function(func) {
         return this.pipe(function(result) {
-            return cont(func, true).put(result);
+            return run(func, true).put(result);
         }, function(reason) {
-            cont(func, false).abort();
+            run(func, false).abort();
             return error(reason);
         }, function() {
-            cont(func, false).abort();
+            run(func, false).abort();
         });
     };
     
@@ -469,7 +461,7 @@ define(function() {
     return {
         all: all,
         any: any,
-        cont: cont,
+        run: run,
         error: error,
         impl: impl,
         periodic: periodic,

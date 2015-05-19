@@ -1,0 +1,21 @@
+{
+    "curly": true,
+    "eqeqeq": true,
+    "unused": true,
+    "undef": true,
+    "strict": true,
+    "trailing": true,
+    "maxlen": 120,
+
+    "globals": {
+        "Promise": false,
+        "setImmediate": false,
+        "setTimeout": false,
+        "clearTimeout": false,
+        "setInterval": false,
+        "clearInterval": false,
+        "define": true,
+        "require": false,
+        "module": false
+    }
+}

@@ -30,21 +30,21 @@ function called(test) {
 }
 
 function successfulBlock(test, result) {
-    return abb.impl(function(success, error) {
+    return abb.impl(function(success) {
         setTimeout(success.bind(null, result));
-        return {abort: notCalled(test)}
+        return {abort: notCalled(test)};
     });
 }
 
 function failingBlock(test, reason) {
     return abb.impl(function(success, error) {
         setTimeout(error.bind(null, reason));
-        return {abort: notCalled(test)}
+        return {abort: notCalled(test)};
     });
 }
 
 function abortedBlock(test) {
-    return abb.impl(function(success, error) {
+    return abb.impl(function() {
         return {abort: called(test)};
     });
 }
@@ -57,15 +57,81 @@ exports.testSuccess = function(test) {
 };
 
 exports.testError = function(test) {
-    var expectedReason = new Error;
+    var expectedReason = new Error();
     abb.error(expectedReason).pipe(notCalled(test), function(reason) {
         test.strictEqual(reason, expectedReason);
         test.done();
     });
 };
 
+exports.testWrapPrimitives = function(test) {
+    abb.wrap().pipe(function(result) {
+        test.strictEqual(result, undefined);
+        
+        return abb.wrap(null);
+    }).pipe(function(result) {
+        test.strictEqual(result, null);
+        
+        return abb.wrap(true);
+    }).pipe(function(result) {
+        test.strictEqual(result, true);
+        
+        return abb.wrap(17);
+    }).pipe(function(result) {
+        test.strictEqual(result, 17);
+        
+        return abb.wrap(NaN);
+    }).pipe(function(result) {
+        test.ok(isNaN(result));
+        
+        return abb.wrap("text");
+    }).pipe(function(result) {
+        test.strictEqual(result, "text");
+        
+        test.done();
+    });
+};
+
+exports.testWrapError = function(test) {
+    var expectedReason = new Error();
+    abb.wrap(expectedReason).pipe(notCalled(test), function(reason) {
+        test.strictEqual(reason, expectedReason);
+        test.done();
+    });
+};
+
+exports.testWrapInvalidArgument = function(test) {
+    test.throws(function() {
+        abb.wrap({});
+    });
+    
+    test.throws(function() {
+        var block = abb.success();
+        block.pipe();
+        abb.wrap(block);
+    });
+    
+    test.throws(function() {
+        var block = abb.success();
+        block.abort();
+        abb.wrap(block);
+    });
+    
+    test.done();
+};
+
+exports.testAbortInvalidArgument = function(test) {
+    test.throws(function() {
+        var block = abb.success();
+        block.pipe();
+        block.abort();
+    });
+    
+    test.done();
+};
+
 exports.testImplWithSuccess = function(test) {
-    abb.impl(function(success, error) {
+    abb.impl(function(success) {
         setTimeout(success.bind(null, 10));
         return {abort: notCalled(test)};
     }).pipe(function(result) {
@@ -75,7 +141,7 @@ exports.testImplWithSuccess = function(test) {
 };
 
 exports.testImplWithError = function(test) {
-    var expectedReason = new Error;
+    var expectedReason = new Error();
     abb.impl(function(success, error) {
         setTimeout(error.bind(null, expectedReason));
         return {abort: notCalled(test)};
@@ -108,7 +174,7 @@ exports.testImplWithAbortAfterSuccess = function(test) {
 
 exports.testImplWithAbortAfterError = function(test) {
     abb.impl(function(error) {
-        error(new Error);
+        error(new Error());
         return {abort: notCalled(test)};
     }).abort();
     test.done();
@@ -124,8 +190,8 @@ exports.testPipeWithSuccessSuccess = function(test) {
 };
 
 exports.testPipeWithSuccessError = function(test) {
-    var expectedReason = new Error;
-    abb.success(12).pipe(function(result) {
+    var expectedReason = new Error();
+    abb.success(12).pipe(function() {
         return expectedReason;
     }).pipe(notCalled(test), function(reason) {
         test.strictEqual(reason, expectedReason);
@@ -134,8 +200,7 @@ exports.testPipeWithSuccessError = function(test) {
 };
 
 exports.testPipeWithErrorSuccess = function(test) {
-    var reason = new Error;
-    abb.error(reason).pipe(null, function(reason) {
+    abb.error(new Error()).pipe(null, function() {
         return 10;
     }).pipe(function(result) {
         test.strictEqual(result, 10);
@@ -144,8 +209,8 @@ exports.testPipeWithErrorSuccess = function(test) {
 };
 
 exports.testPipeWithErrorError = function(test) {
-    var expectedReason1 = new Error, expectedReason2 = new Error;
-    abb.error(expectedReason1).pipe(null, function(reason) {
+    var expectedReason1 = new Error(), expectedReason2 = new Error();
+    abb.error(expectedReason1).pipe(null, function() {
         return expectedReason2;
     }).pipe(notCalled(test), function(reason) {
         test.strictEqual(reason, expectedReason2);
@@ -181,6 +246,22 @@ exports.testPipeWithAbort = function(test) {
         return abortedBlock(test);
     }).abort();
     
+    test.done();
+};
+
+exports.testPipeInvalidArgument = function(test) {
+    test.throws(function() {
+        var block = abb.success();
+        block.pipe();
+        block.pipe();
+    });
+
+    test.throws(function() {
+        var block = abb.success();
+        block.abort();
+        block.pipe();
+    });
+
     test.done();
 };
 
@@ -225,14 +306,14 @@ exports.testAnyWithEmptyArray = function(test) {
 };
 
 exports.testAnyWithSuccessError = function(test) {
-    abb.any(10, new Error).pipe(function(result) {
+    abb.any(10, new Error()).pipe(function(result) {
         test.strictEqual(result, 10);
         test.done();
     }, notCalled(test));
 };
 
 exports.testAnyWithErrorSuccess = function(test) {
-    var expectedReason = new Error;
+    var expectedReason = new Error();
     abb.any([expectedReason, 10]).pipe(notCalled(test), function(reason) {
         test.strictEqual(reason, expectedReason);
         test.done();
@@ -248,7 +329,7 @@ exports.testAnyAbortWithSuccess = function(test) {
 };
 
 exports.testAnyAbortWithError = function(test) {
-    var expectedReason = new Error;
+    var expectedReason = new Error();
     test.expect(2);
     abb.any(failingBlock(test, expectedReason), abortedBlock(test)).pipe(notCalled(test), function(reason) {
         test.strictEqual(reason, expectedReason);
@@ -284,7 +365,7 @@ exports.testAllWithSuccess = function(test) {
 };
 
 exports.testAllWithError = function(test) {
-    var expectedReason = new Error;
+    var expectedReason = new Error();
     abb.all([10, expectedReason, 12]).pipe(notCalled(test), function(reason) {
         test.strictEqual(reason, expectedReason);
         test.done();
@@ -292,7 +373,7 @@ exports.testAllWithError = function(test) {
 };
 
 exports.testAllAbortWithError = function(test) {
-    var expectedReason = new Error;
+    var expectedReason = new Error();
     test.expect(2);
     abb.all(failingBlock(test, expectedReason), abortedBlock(test)).pipe(notCalled(test), function(reason) {
         test.strictEqual(reason, expectedReason);
@@ -319,7 +400,7 @@ exports.testWaitWithAbort = function(test) {
 };
 
 exports.testTimeout = function(test) {
-    abb.timeout(4).pipe(notCalled(test), function(reason) {
+    abb.timeout(4).pipe(notCalled(test), function() {
         test.done();
     });
 };
@@ -332,9 +413,25 @@ exports.testRetry = function(test) {
         if (counter === 3) {
             return "ok";
         } else {
-            return new Error;
+            return new Error();
         }
     }, 3).pipe(function(result) {
+        test.strictEqual(result, "ok");
+        test.done();
+    }, notCalled(test));
+};
+
+exports.testUnlimitedRetry = function(test) {
+    var counter = 0;
+    
+    abb.retry(function() {
+        counter++;
+        if (counter === 3) {
+            return "ok";
+        } else {
+            return new Error();
+        }
+    }).pipe(function(result) {
         test.strictEqual(result, "ok");
         test.done();
     }, notCalled(test));
@@ -348,9 +445,9 @@ exports.testRetryWithLimitReached = function(test) {
         if (counter === 3) {
             return "ok";
         } else {
-            return new Error;
+            return new Error();
         }
-    }, 2).pipe(notCalled(test), function(reason) {
+    }, 2).pipe(notCalled(test), function() {
         test.done();
     }, notCalled(test));
 };
@@ -362,11 +459,11 @@ exports.testRetryWithAbort = function(test) {
         counter++;
         switch (counter) {
         case 1:
-            return new Error;
+            return new Error();
         case 2:
             block.abort();
             setTimeout(test.done.bind(test));
-            return new Error;
+            return new Error();
         default:
             test.ok(false, "should not be reached");
         }
@@ -374,12 +471,70 @@ exports.testRetryWithAbort = function(test) {
 };
 
 exports.testPeriodicWithError = function(test) {
-    var expectedReason = new Error;
+    var expectedReason = new Error();
     abb.periodic(failingBlock.bind(null, test, expectedReason), 1).pipe(notCalled(test), function(reason) {
         test.strictEqual(reason, expectedReason);
         test.done();
     });
 };
+
+exports.testExitWithSuccessSuccess = function(test) {
+    abb.success(1).exit(function(ok) {
+        test.strictEqual(ok, true);
+        return 2;
+    }).pipe(function(result) {
+        test.strictEqual(result, 1);
+        test.done();
+    }, notCalled(test));
+};
+
+exports.testExitWithSuccessError = function(test) {
+    var expectedReason = new Error();
+    abb.success(1).exit(function(ok) {
+        test.strictEqual(ok, true);
+        return expectedReason;
+    }).pipe(notCalled(test), function(reason) {
+        test.strictEqual(reason, expectedReason);
+        test.done();
+    });
+};
+
+exports.testExitWithError = function(test) {
+    var expectedReason = new Error();
+    test.expect(3);
+    
+    abb.error(expectedReason).exit(function(ok) {
+        test.strictEqual(ok, false);
+        return abortedBlock(test);
+    }).pipe(notCalled(test), function(reason) {
+        test.strictEqual(reason, expectedReason);
+        test.done();
+    });
+};
+
+exports.testExitWithAbort = function(test) {
+    test.expect(2);
+
+    abb.success().exit(function(ok) {
+        test.strictEqual(ok, false);
+        return abortedBlock(test);
+    }).abort();
+    
+    test.done();
+};
+
+function createThenable(test) {
+    return {
+        then: function(resolved, rejected) {
+            this.resolve = resolved;
+            this.reject = rejected;
+            
+            return {
+                then: notCalled(test)
+            };
+        }
+    };
+}
 
 exports.withFakeTime = {
     setUp: function(callback) {
@@ -390,6 +545,32 @@ exports.withFakeTime = {
     tearDown: function(callback) {
         this.clock.uninstall();
         callback();
+    },
+    
+    testWrapThenable: function(test) {
+        var thenable, expectedReason = new Error();
+        
+        test.expect(2);
+        
+        thenable = createThenable(test);
+        
+        abb.wrap(thenable).pipe(function(result) {
+            test.strictEqual(result, "result");
+        }, notCalled(test));
+        
+        thenable.resolve("result");
+        this.clock.tick();
+        
+        thenable = createThenable(test);
+        
+        abb.wrap(thenable).pipe(notCalled(test), function(reason) {
+            test.strictEqual(reason, expectedReason);
+        }, notCalled(test));
+        
+        thenable.reject(expectedReason);
+        this.clock.tick();
+        
+        test.done();
     },
     
     testWait: function(test) {
@@ -413,7 +594,7 @@ exports.withFakeTime = {
         
         block = abb.periodic(function() {
             test.ok(!success);
-            return abb.impl(function(onsuccess, onerror) {
+            return abb.impl(function(onsuccess) {
                 success = function() { success = null; onsuccess(); };
             });
         }, 100);

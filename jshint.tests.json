@@ -2,7 +2,10 @@
     "curly": true,
     "eqeqeq": true,
     "unused": true,
+    "undef": true,
     "strict": true,
     "trailing": true,
-    "maxlen": 120
+    "maxlen": 120,
+
+    "node": true
 }
