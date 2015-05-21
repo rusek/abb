@@ -437,7 +437,7 @@ define(function() {
     };
     
     proto.unpack = function(func) {
-        this.pipe(function(result) {
+        return this.pipe(function(result) {
             return func.apply(null, result);
         });
     };

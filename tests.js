@@ -478,7 +478,7 @@ exports.testPeriodicWithError = function(test) {
     });
 };
 
-exports.testExitWithSuccessSuccess = function(test) {
+exports.testBlockExitWithSuccessSuccess = function(test) {
     abb.success(1).exit(function(ok) {
         test.strictEqual(ok, true);
         return 2;
@@ -488,7 +488,7 @@ exports.testExitWithSuccessSuccess = function(test) {
     }, notCalled(test));
 };
 
-exports.testExitWithSuccessError = function(test) {
+exports.testBlockExitWithSuccessError = function(test) {
     var expectedReason = new Error();
     abb.success(1).exit(function(ok) {
         test.strictEqual(ok, true);
@@ -499,7 +499,7 @@ exports.testExitWithSuccessError = function(test) {
     });
 };
 
-exports.testExitWithError = function(test) {
+exports.testBlockExitWithError = function(test) {
     var expectedReason = new Error();
     test.expect(3);
     
@@ -512,7 +512,7 @@ exports.testExitWithError = function(test) {
     });
 };
 
-exports.testExitWithAbort = function(test) {
+exports.testBlockExitWithAbort = function(test) {
     test.expect(2);
 
     abb.success().exit(function(ok) {
@@ -521,6 +521,86 @@ exports.testExitWithAbort = function(test) {
     }).abort();
     
     test.done();
+};
+
+exports.testBlockMap = function(test) {
+    abb.success([1, 2, 3]).map(function(result) {
+        return abb.success(result * 2);
+    }).pipe(function(result) {
+        test.deepEqual(result, [2, 4, 6]);
+        test.done();
+    }, notCalled(test));
+};
+
+exports.testBlockPutWithSuccess = function(test) {
+    var expectedResult = {};
+    abb.success(1).put(expectedResult).pipe(function(result) {
+        test.strictEqual(result, expectedResult);
+        test.done();
+    }, notCalled(test));
+};
+
+exports.testBlockPutWithSuccess = function(test) {
+    var expectedReason = new Error();
+    abb.error(expectedReason).put(1).pipe(notCalled(test), function(reason) {
+        test.strictEqual(reason, expectedReason);
+        test.done();
+    });
+};
+
+exports.testBlockModify = function(test) {
+    var expectedResult = abb.success(1);
+    
+    abb.success(1).modify(function(result) {
+        test.strictEqual(result, 1);
+        return expectedResult;
+    }).pipe(function(result) {
+        test.strictEqual(result, expectedResult);
+        test.done();
+    }, notCalled(test));
+};
+
+exports.testBlockUnpack = function(test) {
+    abb.success([1, 2, 3]).unpack(function() {
+        var args = Array.prototype.slice.call(arguments); // copy as array
+        test.deepEqual(args, [1, 2, 3]);
+        return 4;
+    }).pipe(function(result) {
+        test.strictEqual(result, 4);
+        test.done();
+    }, notCalled(test));
+};
+
+exports.testBlockFailWithSuccess = function(test) {
+    var expectedReason = new Error();
+    abb.success().fail(expectedReason).pipe(notCalled(test), function(reason) {
+        test.strictEqual(reason, expectedReason);
+        test.done();
+    });
+};
+
+exports.testBlockFailWithError = function(test) {
+    var expectedReason = new Error();
+    abb.error(expectedReason).fail(new Error()).pipe(notCalled(test), function(reason) {
+        test.strictEqual(reason, expectedReason);
+        test.done();
+    });
+};
+
+exports.testBlockTimeout = function(test) {
+    test.expect(2);
+
+    abortedBlock(test).timeout(1).pipe(notCalled(test), function(reason) {
+        test.ok(reason instanceof Error);
+        test.done();
+    });
+};
+
+exports.testBlockTimeoutWithSuccess = function(test) {
+    abb.success(10).timeout(1).pipe(function(result) {
+        test.strictEqual(result, 10);
+        test.done();
+    }, notCalled(test));
 };
 
 function createThenable(test) {
