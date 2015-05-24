@@ -243,6 +243,19 @@ exports.testPipeWithSuccessAbort = function(test) {
     }, notCalled(test), notCalled(test));
 };
 
+exports.getPipeWithErrorAbort = function(test) {
+    var block;
+    
+    test.expect(2);
+
+    block = abb.error(new Error()).pipe(notCalled(test), function() {
+        test.ok(block);
+        block.abort();
+        setTimeout(test.done.bind(test));
+        return abortedBlock(test);
+    }, notCalled(test));
+};
+
 exports.testPipeWithAbort = function(test) {
     test.expect(3);
     

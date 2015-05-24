@@ -101,7 +101,7 @@ define(function() {
         firing = false;
     }
     
-    var RUNNING = 0, SUCCESS = 1, ERROR = 2, DONE = 3;
+    var RUNNING = 0, SUCCESS = 1, ERROR = 2, ABORT = 3;
     
     function Block(onabort) {
         this._onabort = onabort || nop;
@@ -116,10 +116,8 @@ define(function() {
     
     proto._fire = function() {
         if (this._state === SUCCESS) {
-            this._state = DONE;
             this._onsuccess(this._value);
         } else if (this._state === ERROR) {
-            this._state = ERROR;
             this._onerror(this._value);
         }
     };
@@ -145,11 +143,11 @@ define(function() {
     };
     
     proto._tieable = function() {
-        if (this._state === DONE) {
-            throw new Error("Block is already aborted");
-        }
         if (this._onsuccess) {
             throw new Error("Block already has a succesor");
+        }
+        if (this._state === ABORT) {
+            throw new Error("Block is already aborted");
         }
         return this;
     };
@@ -164,7 +162,7 @@ define(function() {
     };
     
     proto._guardTie = function(owner, success, error) {
-        if (owner._state === DONE) {
+        if (owner._state === ABORT) {
             this._abort();
         } else {
             this._tie(success, error);
@@ -176,7 +174,7 @@ define(function() {
         var running;
         
         running = this._state === RUNNING;
-        this._state = DONE;
+        this._state = ABORT;
         if (running) {
             this._onabort();
         }
