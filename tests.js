@@ -49,6 +49,18 @@ function abortedBlock(test) {
     });
 }
 
+function stepper() {
+    var funcs = [], pos = 0;
+
+    return function(i, func) {
+        funcs[i] = func.bind.apply(func, [null].concat(Array.prototype.slice.call(arguments, 2)));
+        while (funcs[pos]) {
+            setImmediate(funcs[pos]);
+            pos++;
+        }
+    };
+}
+
 exports.testSuccess = function(test) {
     abb.success(12).pipe(function(result) {
         test.strictEqual(result, 12);
@@ -528,6 +540,39 @@ exports.testBlockMap = function(test) {
         return abb.success(result * 2);
     }).pipe(function(result) {
         test.deepEqual(result, [2, 4, 6]);
+        test.done();
+    }, notCalled(test));
+};
+
+exports.testBlockMapWithLimit = function(test) {
+    var block, step = stepper(), got = [];
+    
+    block = abb.success([1, 2, 3]).map(function(result) {
+        function inStepExpectGot(order, expectedGot) {
+            return abb.impl(function(success) {
+                step(order, function() {
+                    test.deepEqual(got, expectedGot);
+                    success(-result);
+                });
+            });
+        }
+    
+        got.push(result);
+        switch (result) {
+        case 1:
+            return inStepExpectGot(1, [1, 2]);
+            
+        case 2:
+            return inStepExpectGot(0, [1, 2]);
+            
+        case 3:
+            return inStepExpectGot(2, [1, 2, 3]);
+        
+        default:
+            test.ok(false);
+        }
+    }, 2).pipe(function(result) {
+        test.deepEqual(result, [-1, -2, -3]);
         test.done();
     }, notCalled(test));
 };

@@ -5,7 +5,7 @@ if (typeof define !== 'function') {
 define(function() {
     "use strict";
 
-    var map = Function.prototype.call.bind(Array.prototype.map);
+    var mapArray = Function.prototype.call.bind(Array.prototype.map);
     var slice = Function.prototype.call.bind(Array.prototype.slice);
     
     function present(arg) {
@@ -264,6 +264,56 @@ define(function() {
         return errorBlock;
     }
     
+    function map(func, elems, limit) {
+        var results, mapBlock, blocks, started = 0, finished = 0, total, prev;
+        
+        function abort() {
+            for (var i = 0; i < started; i++) {
+                blocks[i]._abort();
+            }
+            total = 0; // terminate while in go()
+        }
+        
+        function startNext() {
+            var i = started++;
+            blocks[i] = _run(func, elems[i])._guardTie(mapBlock, function(result) {
+                results[i] = result;
+                finished++;
+                go();
+            }, function(reason) {
+                abort();
+                mapBlock._error(reason);
+            });
+        }
+        
+        function go() {
+            if (finished < total) {
+                while (started - finished < limit && started < total) {
+                    startNext();
+                }
+            } else {
+                mapBlock._success(results);
+                return;
+            }
+        }
+        
+        limit = present(limit) ? Number(limit) : Infinity;
+        /* jshint -W018 */
+        if (!(limit > 0)) {
+            throw new Error("Limit must be positive");
+        }
+        total = elems.length;
+        mapBlock = new Block(abort);
+        blocks = new Array(total);
+        results = new Array(total);
+        
+        prev = setErrorTrap();
+        go();
+        restoreErrorTrap(prev);
+        
+        return mapBlock;
+    }
+    
     function all(blocks) {
         var remaining, results, allBlock;
     
@@ -281,7 +331,7 @@ define(function() {
             return success([]);
         }
         
-        blocks = map(blocks, wrap);
+        blocks = mapArray(blocks, wrap);
         remaining = blocks.length;
         results = new Array(remaining);
         allBlock = new Block(abort);
@@ -319,7 +369,7 @@ define(function() {
             return success();
         }
         
-        blocks = map(blocks, wrap);
+        blocks = mapArray(blocks, wrap);
         anyBlock = new Block(abort);
         
         blocks.forEach(function(block) {
@@ -418,9 +468,9 @@ define(function() {
         });
     };
     
-    proto.map = function(func) {
+    proto.map = function(func, limit) {
         return this.pipe(function(result) {
-            return all(map(result, func));
+            return map(func, result, limit);
         });
     };
     
@@ -461,11 +511,12 @@ define(function() {
     return {
         all: all,
         any: any,
-        run: run,
         error: error,
         impl: impl,
+        map: map,
         periodic: periodic,
         retry: retry,
+        run: run,
         success: success,
         timeout: timeout,
         wait: wait,
