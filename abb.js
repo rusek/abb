@@ -6,7 +6,7 @@ define(function() {
     "use strict";
 
     var mapArray = Function.prototype.call.bind(Array.prototype.map);
-    var slice = Function.prototype.call.bind(Array.prototype.slice);
+    var sliceArray = Function.prototype.call.bind(Array.prototype.slice);
 
     function present(arg) {
         return arg !== null && arg !== undefined;
@@ -26,7 +26,15 @@ define(function() {
                 resolve();
             });
             return function(func) {
-                helper.then(func);
+                helper.then(function() {
+                    try {
+                        func();
+                    } catch (err) {
+                        setTimeout(function() {
+                            throw err;
+                        });
+                    }
+                });
             };
         }
 
@@ -201,7 +209,7 @@ define(function() {
     }
 
     function run(func) {
-        return wrap(func.apply(null, slice(arguments, 1)));
+        return wrap(func.apply(null, sliceArray(arguments, 1)));
     }
 
     function wrap(value) {
