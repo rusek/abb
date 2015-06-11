@@ -446,7 +446,7 @@ define(function() {
         pipeBlock = new Block(function() {
             if (thisBlock) {
                 thisBlock._abort();
-                _run(onabort || nop)._abort();
+                _run(present(onabort) ? onabort : nop)._abort();
             } else if (contBlock) {
                 contBlock._abort();
             }
@@ -455,8 +455,8 @@ define(function() {
         pipeError = pipeBlock._error.bind(pipeBlock);
 
         thisBlock._tie(
-            onsuccess ? setupCont.bind(null, onsuccess) : pipeSuccess,
-            onerror ? setupCont.bind(null, onerror) : pipeError
+            present(onsuccess) ? setupCont.bind(null, onsuccess) : pipeSuccess,
+            present(onerror) ? setupCont.bind(null, onerror) : pipeError
         );
 
         return pipeBlock;
