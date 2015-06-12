@@ -14,6 +14,38 @@ define(function() {
 
     function nop() {}
 
+    function reasonMatcher(guard) {
+        if (present(guard)) {
+            switch (typeof guard) {
+            case "string":
+                return function(reason) {
+                    return reason.name === guard;
+                };
+
+            case "function":
+                return function(reason) {
+                    return reason instanceof guard;
+                };
+
+            default:
+                if ("length" in guard) {
+                    guard = mapArray(guard, reasonMatcher);
+                    return function(reason) {
+                        return guard.some(function(matcher) {
+                            return matcher(reason);
+                        });
+                    };
+                }
+
+                throw new Error("Invalid except guard: " + guard);
+            }
+        } else {
+            return function() {
+                return true;
+            };
+        }
+    }
+
     var schedule = (function() {
         var helper;
 
@@ -154,7 +186,7 @@ define(function() {
             throw new Error("Block already has a succesor");
         }
         if (this._state === ABORT) {
-            throw new Error("Block is already aborted");
+            throw new Error("Block has been aborted earlier");
         }
         return this;
     };
@@ -503,19 +535,31 @@ define(function() {
         });
     };
 
+    proto.except = function(func, guard) {
+        var matcher = reasonMatcher(guard);
+        return this.pipe(null, function(reason) {
+            return (matcher(reason) ? func : error)(reason);
+        });
+    };
+
     proto.timeout = function(delay) {
         return any(this, timeout(delay));
     };
 
-    proto.suppress = function(result) {
-        return this.pipe(null, function() {
-            return success(result);
+    proto.suppress = function(result, guard) {
+        var matcher = reasonMatcher(guard);
+        return this.pipe(null, function(reason) {
+            return matcher(reason) ? success(result) : error(reason);
         });
     };
+
+    var dead = impl(nop);
+    dead.abort();
 
     return {
         all: all,
         any: any,
+        dead: dead,
         error: error,
         impl: impl,
         map: map,

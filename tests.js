@@ -316,6 +316,23 @@ exports.testBlockSuppressWithError = function(test) {
     }, notCalled(test));
 };
 
+exports.testBlockSuppressWithNameMatched = function(test) {
+    abb.error(new ReferenceError()).suppress(100, "ReferenceError").pipe(function(result) {
+        test.strictEqual(result, 100);
+        test.done();
+    }, notCalled(test));
+};
+
+exports.testBlockSuppressWithNameMatched = function(test) {
+    var expectedReason = new ReferenceError();
+    abb.error(expectedReason).suppress(100, "OtherError").pipe(notCalled(test), function(reason) {
+        test.strictEqual(reason, expectedReason);
+        test.done();
+    });
+};
+
+// other reason matchers are verified in Block.prototype.except tests
+
 exports.testAnyWithNoArguments = function(test) {
     abb.any().pipe(function(result) {
         test.strictEqual(result, undefined);
@@ -503,6 +520,15 @@ exports.testPeriodicWithError = function(test) {
     });
 };
 
+exports.testDead = function(test) {
+    test.throws(function() {
+        abb.dead.pipe();
+    });
+    abb.dead.abort();
+    abb.dead.abort();
+    test.done();
+};
+
 exports.testBlockExitWithSuccessSuccess = function(test) {
     abb.success(1).exit(function(ok) {
         test.strictEqual(ok, true);
@@ -659,6 +685,88 @@ exports.testBlockTimeoutWithSuccess = function(test) {
         test.strictEqual(result, 10);
         test.done();
     }, notCalled(test));
+};
+
+exports.testBlockExceptWithSuccess = function(test) {
+    abb.success(10).except(notCalled(test)).pipe(function(result) {
+        test.strictEqual(result, 10);
+        test.done();
+    }, notCalled(test));
+};
+
+exports.testBlockExceptWithError = function(test) {
+    var expectedReason = new Error();
+    abb.error(expectedReason).except(function(reason) {
+        test.strictEqual(reason, expectedReason);
+        test.done();
+    });
+};
+
+exports.testBlockExceptWithNameMatched = function(test) {
+    var expectedReason = new ReferenceError();
+    abb.error(expectedReason).except(function(reason) {
+        test.strictEqual(reason, expectedReason);
+        test.done();
+    }, "ReferenceError");
+};
+
+exports.testBlockExceptWithNameUnmatched = function(test) {
+    var expectedReason = new ReferenceError();
+    abb.error(expectedReason).except(notCalled(test), "OtherError").pipe(notCalled(test), function(reason) {
+        test.strictEqual(reason, expectedReason);
+        test.done();
+    });
+};
+
+exports.testBlockExceptWithConstructorMatched = function(test) {
+    var expectedReason = new ReferenceError();
+    abb.error(expectedReason).except(function(reason) {
+        test.strictEqual(reason, expectedReason);
+        test.done();
+    }, Error);
+};
+
+exports.testBlockExceptWithBaseConstructorMatched = function(test) {
+    var expectedReason = new ReferenceError();
+    abb.error(expectedReason).except(function(reason) {
+        test.strictEqual(reason, expectedReason);
+        test.done();
+    }, Error);
+};
+
+exports.testBlockExceptWithConstructorUnmatched = function(test) {
+    var expectedReason = new ReferenceError();
+    abb.error(expectedReason).except(notCalled(test), SyntaxError).pipe(notCalled(test), function(reason) {
+        test.strictEqual(reason, expectedReason);
+        test.done();
+    });
+};
+
+exports.testBlockExceptWithEmptyArray = function(test) {
+    var expectedReason = new ReferenceError();
+    abb.error(expectedReason).except(notCalled(test), []).pipe(notCalled(test), function(reason) {
+        test.strictEqual(reason, expectedReason);
+        test.done();
+    });
+};
+
+exports.testBlockExceptWithArrayMatched = function(test) {
+    var expectedReason = new ReferenceError();
+    abb.error(expectedReason).except(function(reason) {
+        test.strictEqual(reason, expectedReason);
+        test.done();
+    }, {0: "OtherError", 1: ReferenceError, length: 2});
+};
+
+exports.testBlockExceptWithArrayUnmatched = function(test) {
+    var expectedReason = new ReferenceError();
+    abb.error(expectedReason).except(
+        notCalled(test),
+        ["OtherError", SyntaxError]
+    ).pipe(notCalled(test), function(reason) {
+        test.strictEqual(reason, expectedReason);
+        test.done();
+    });
 };
 
 function createThenable(test) {
